@@ -3,3 +3,4 @@ ccxt
 pandas
 google-generativeai
 plotly
+fpdf
