@@ -8,6 +8,13 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 import time
 
+# --- PDF LIBRARY ---
+try:
+    from fpdf import FPDF
+except ImportError:
+    st.error("❌ 'fpdf' library not found! Please add 'fpdf' to your requirements.txt file.")
+    st.stop()
+
 # --- IMPORT KNOWLEDGE BASE ---
 try:
     from knowledge import ELLIOTT_KNOWLEDGE
@@ -19,7 +26,7 @@ except ImportError:
 # 1. CONFIGURATION
 # ==========================================
 
-st.set_page_config(page_title="Elliott Wave Pro (Final)", layout="wide", page_icon="🌊")
+st.set_page_config(page_title="Elliott Wave Pro (Final + PDF)", layout="wide", page_icon="🌊")
 
 st.markdown("""
 <style>
@@ -51,7 +58,6 @@ if not API_KEY:
 
 try:
     genai.configure(api_key=API_KEY)
-    # Using the powerful model for deep analysis
     MODEL_NAME = 'gemini-3-pro-preview' 
 except Exception as e:
     st.error(f"API Configuration Error: {e}")
@@ -66,10 +72,11 @@ if "df_micro" not in st.session_state: st.session_state.df_micro = None
 if "last_update" not in st.session_state: st.session_state.last_update = None
 if "chat_history" not in st.session_state: st.session_state.chat_history = []
 
+# --- CACHING ADDED FOR SPEED ---
+@st.cache_data(ttl=300) # Data stays in memory for 300 seconds (5 mins)
 def get_crypto_data(symbol, timeframe, limit=1000):
     """
-    Fetches crypto data. Tries multiple exchanges (Binance -> OKX -> Kraken -> KuCoin).
-    This prevents 'Failed to fetch' errors if one exchange blocks the IP.
+    Fetches crypto data using multiple exchanges with Caching.
     """
     exchanges_to_try = [
         ccxt.binance(),
@@ -81,17 +88,13 @@ def get_crypto_data(symbol, timeframe, limit=1000):
     for exchange in exchanges_to_try:
         try:
             exchange.enableRateLimit = True
-            # Fetch data
             bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
             if bars:
                 df = pd.DataFrame(bars, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
                 df['time'] = pd.to_datetime(df['time'], unit='ms')
-                # Optional: Filter out incomplete last candle if needed
                 return df
         except Exception as e:
-            continue # Try next exchange
-    
-    # If all fail
+            continue
     return pd.DataFrame()
 
 def analyze_deep_wave(symbol, micro_tf, df_1w, df_1d, df_micro, language, previous=None):
@@ -100,26 +103,16 @@ def analyze_deep_wave(symbol, micro_tf, df_1w, df_1d, df_micro, language, previo
     if language == "Singlish":
         lang_inst = "Explain in 'Singlish' (Sinhala mixed with English). Use technical terms freely."
 
-    # --- DATA OPTIMIZATION ---
-    # 1. Macro Context
     json_1w = df_1w.tail(30).to_json(orient="records", date_format='iso')
     json_1d = df_1d.tail(60).to_json(orient="records", date_format='iso')
 
-    # 2. Micro Context (Optimized for Tokens)
     cols = ['open', 'high', 'low', 'close', 'volume']
-    
-    # Take last 300 candles for analysis (Good balance for 1m/5m charts)
     micro_subset = df_micro.tail(300).copy()
-    
-    # Round to 4 decimal places to reduce token count
     micro_subset[cols] = micro_subset[cols].round(4)
-    
-    # Convert to JSON
     json_micro = micro_subset.to_json(orient="records", date_format='iso')
 
     task = "### TASK: DETAILED ELLIOTT WAVE STRUCTURE ANALYSIS"
     
-    # Special Instruction for Scalping
     scalp_instruction = ""
     if micro_tf in ['1m', '3m', '5m']:
         scalp_instruction = """
@@ -141,7 +134,7 @@ def analyze_deep_wave(symbol, micro_tf, df_1w, df_1d, df_micro, language, previo
     
     ### INSTRUCTIONS
     1.  **Structure:** Analyze the provided 300 candles to determine the exact wave count.
-    2.  **Validations:** Check High/Low relationships, Fibonacci Time cycles (if applicable), and Volume.
+    2.  **Validations:** Check High/Low relationships, Fibonacci Time cycles, and Volume.
     3.  **Consistency:** Ensure the Micro count fits into the 1D Swing structure.
     {scalp_instruction}
     
@@ -197,6 +190,60 @@ def analyze_deep_wave(symbol, micro_tf, df_1w, df_1d, df_micro, language, previo
         st.error(f"AI Analysis Error: {e}")
         return None
 
+# --- PDF GENERATOR FUNCTION ---
+def create_pdf(macro, micro, scenarios, symbol, tf):
+    class PDF(FPDF):
+        def header(self):
+            self.set_font('Arial', 'B', 15)
+            self.cell(0, 10, 'Elliott Wave AI - Analysis Report', 0, 1, 'C')
+            self.ln(10)
+    
+    pdf = PDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=11)
+    
+    # 1. Header Info
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, f"Symbol: {symbol}  |  Timeframe: {tf}", 0, 1)
+    pdf.cell(0, 10, f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}", 0, 1)
+    pdf.line(10, 35, 200, 35)
+    pdf.ln(5)
+    
+    # 2. Macro Analysis
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "1. Macro Trend (1W/1D)", 0, 1)
+    pdf.set_font("Arial", size=10)
+    pdf.multi_cell(0, 7, f"Trend: {macro.get('trend')}\nStructure: {macro.get('current_structure')}\nDetails: {macro.get('detailed_breakdown')}\nKey Levels: {macro.get('key_levels')}")
+    pdf.ln(5)
+    
+    # 3. Micro Analysis
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, f"2. Micro Structure ({tf})", 0, 1)
+    pdf.set_font("Arial", size=10)
+    pdf.multi_cell(0, 7, f"Wave Degree: {micro.get('current_wave_degree')}\nStatus: {micro.get('wave_count_status')}\nStructure: {micro.get('sub_wave_structure')}\nVolume: {micro.get('volume_validation')}")
+    pdf.ln(5)
+    
+    # 4. Scenarios
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "3. Trade Setups", 0, 1)
+    
+    for s in scenarios:
+        pdf.set_font("Arial", 'B', 10)
+        pdf.set_text_color(0, 0, 139) # Dark Blue
+        pdf.cell(0, 10, f"> {s.get('name')} ({s.get('trade_type')})", 0, 1)
+        pdf.set_text_color(0, 0, 0) # Black
+        pdf.set_font("Arial", size=10)
+        pdf.multi_cell(0, 7, f"Reasoning: {s.get('summary')}\nEntry: {s.get('entry_zone')}\nTarget: {s.get('target')}\nInvalidation: {s.get('invalidation')}")
+        pdf.ln(2)
+        
+    pdf.ln(10)
+    pdf.set_font("Arial", 'I', 8)
+    pdf.cell(0, 10, "Generated by Deep Wave AI. Not financial advice.", 0, 1, 'C')
+
+    # Output as latin-1 string (standard for fpdf/streamlit)
+    # Note: Sinhala characters might not render correctly in standard FPDF.
+    return pdf.output(dest='S').encode('latin-1', 'replace')
+
 # ==========================================
 # 3. UI LAYOUT
 # ==========================================
@@ -204,7 +251,11 @@ def analyze_deep_wave(symbol, micro_tf, df_1w, df_1d, df_micro, language, previo
 with st.sidebar:
     st.title("🌊 Deep Wave AI")
     lang = st.radio("Language", ["Singlish", "English"], index=0)
-    sym = st.selectbox("Symbol", ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "DOGE/USDT", "ADA/USDT"], index=0)
+    
+    # --- UPDATED: SEARCH ANY SYMBOL ---
+    st.subheader("Asset Selection")
+    sym_input = st.text_input("Symbol (e.g. BTC/USDT)", value="BTC/USDT")
+    sym = sym_input.upper().strip() # Convert to uppercase
     
     st.subheader("Timeframe")
     tf = st.selectbox(
@@ -217,14 +268,11 @@ with st.sidebar:
     
     st.divider()
     
-    # --- CHAT SECTION (Moved to Expander for stability) ---
     with st.expander("💬 Chat about Structure", expanded=True):
         if st.session_state.ai_data:
-            # Display History
             for m in st.session_state.chat_history:
                 st.chat_message(m['role']).write(m['content'])
             
-            # Chat Input
             q = st.chat_input("Ask about the wave count...")
             if q:
                 st.session_state.chat_history.append({"role": "user", "content": q})
@@ -233,15 +281,12 @@ with st.sidebar:
                 with st.spinner("AI thinking..."):
                     try:
                         mod = genai.GenerativeModel(MODEL_NAME)
-                        # Prepare context summary
                         context_summary = {
                             "macro": st.session_state.ai_data.get('macro_analysis'),
                             "micro": st.session_state.ai_data.get('micro_analysis'),
                             "scenarios": st.session_state.ai_data.get('trade_scenarios')
                         }
                         context_str = json.dumps(context_summary)
-                        
-                        # Generate response
                         res = mod.generate_content(f"You are an Elliott Wave expert. Context: {context_str}. User Question: {q}. Language: {lang}")
                         
                         st.session_state.chat_history.append({"role": "assistant", "content": res.text})
@@ -264,12 +309,10 @@ st.title(f"🌊 {sym} Deep Analysis ({tf})")
 
 if run:
     with st.spinner(f"📡 Fetching Data for {sym}..."):
-        # Increased limit to 1000 to ensure we have enough data for 300 candle subset
         d1w = get_crypto_data(sym, "1w", 200)
         d1d = get_crypto_data(sym, "1d", 300)
         dm = get_crypto_data(sym, tf, 1000) 
         
-        # --- ERROR HANDLING ---
         if not dm.empty and not d1w.empty:
             st.session_state.df_micro = dm
             st.session_state.df_1w = d1w
@@ -280,23 +323,36 @@ if run:
                 if ai:
                     st.session_state.ai_data = ai
                     st.session_state.last_update = datetime.now().strftime("%H:%M:%S")
-                    st.session_state.chat_history = [] # Clear old chat on new analysis
+                    st.session_state.chat_history = [] 
                     st.rerun()
                 else:
                     st.error("❌ AI Analysis Failed. Please try again.")
         else:
             st.error(f"❌ Failed to fetch data for {sym}.")
-            st.warning("⚠️ All exchanges (Binance, OKX, Kraken, KuCoin) failed. Please check your internet connection or try again later.")
+            st.warning("⚠️ All exchanges failed. Please check the symbol and try again.")
 
 # --- DISPLAY RESULTS ---
 if st.session_state.ai_data:
     data = st.session_state.ai_data
     macro = data.get('macro_analysis', {})
     micro = data.get('micro_analysis', {})
+    scenarios = data.get('trade_scenarios', [])
     
     # Update Button
     c1, c2 = st.columns([5,1])
     c1.caption(f"Last Update: {st.session_state.last_update}")
+    
+    # --- PDF DOWNLOAD BUTTON ---
+    try:
+        pdf_bytes = create_pdf(macro, micro, scenarios, sym, tf)
+        c2.download_button(
+            label="📥 Download PDF",
+            data=pdf_bytes,
+            file_name=f"{sym}_{tf}_Analysis.pdf",
+            mime="application/pdf"
+        )
+    except Exception as e:
+        c2.error(f"PDF Error: {e}")
     
     # --- 1. MACRO BREAKDOWN ---
     st.markdown("### 🌍 Macro Structure (1W / 1D)")
@@ -334,7 +390,6 @@ if st.session_state.ai_data:
     
     with tab1:
         if st.session_state.df_micro is not None:
-            # Show last 300 candles to match AI analysis
             df = st.session_state.df_micro.tail(300)
             
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
@@ -343,8 +398,8 @@ if st.session_state.ai_data:
             colors = ['#00E676' if r['close'] >= r['open'] else '#FF5252' for i, r in df.iterrows()]
             fig.add_trace(go.Bar(x=df['time'], y=df['volume'], marker_color=colors, name="Volume"), row=2, col=1)
             
-            if 'trade_scenarios' in data and len(data['trade_scenarios']) > 0:
-                prim = data['trade_scenarios'][0]
+            if scenarios:
+                prim = scenarios[0]
                 try:
                     fig.add_hline(y=float(prim['target']), line_dash="dash", line_color="#00E676", row=1, col=1, annotation_text="TP")
                     fig.add_hline(y=float(prim['invalidation']), line_dash="dot", line_color="#FF5252", row=1, col=1, annotation_text="Invalidation")
@@ -354,8 +409,8 @@ if st.session_state.ai_data:
             st.plotly_chart(fig, use_container_width=True)
         
     with tab2:
-        if 'trade_scenarios' in data:
-            for s in data['trade_scenarios']:
+        if scenarios:
+            for s in scenarios:
                 st.markdown(f"""
                 <div class='scenario-card' style='border-left: 5px solid {s.get('color')};'>
                     <h3>{s.get('name')} ({s.get('trade_type')})</h3>
@@ -367,3 +422,7 @@ if st.session_state.ai_data:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+
+# --- DISCLAIMER ---
+st.markdown("---")
+st.caption("⚠️ **Disclaimer:** This application provides technical analysis based on Elliott Wave Theory using AI. Cryptocurrency trading involves high risk. This is not financial advice. Please do your own research before trading.")
