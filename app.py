@@ -19,7 +19,7 @@ except ImportError:
 # 1. CONFIGURATION
 # ==========================================
 
-st.set_page_config(page_title="Elliott Wave Pro (Optimized)", layout="wide", page_icon="🌊")
+st.set_page_config(page_title="Elliott Wave Pro (Gemini 3.0)", layout="wide", page_icon="🌊")
 
 st.markdown("""
 <style>
@@ -51,7 +51,7 @@ if not API_KEY:
 
 try:
     genai.configure(api_key=API_KEY)
-    # Using a standard stable model
+    # CHANGED: Using the specific model requested by user
     MODEL_NAME = 'gemini-3-pro-preview' 
 except Exception as e:
     st.error(f"API Configuration Error: {e}")
@@ -99,7 +99,7 @@ def analyze_deep_wave(symbol, micro_tf, df_1w, df_1d, df_micro, language, previo
     # Take last 300 candles (Better for 1m timeframe)
     micro_subset = df_micro.tail(300).copy()
     
-    # Round to 4 decimal places to save tokens (e.g. 0.123456 -> 0.1235)
+    # Round to 4 decimal places to save tokens
     micro_subset[cols] = micro_subset[cols].round(4)
     
     # Convert to JSON without index to save space
@@ -204,20 +204,47 @@ with st.sidebar:
     run = st.button("🚀 Analyze Structure", type="primary")
     
     st.divider()
-    with st.popover("💬 Chat about Structure"):
-        q = st.chat_input("Ask about the wave count...")
-        if q and st.session_state.ai_data:
-            st.session_state.chat_history.append({"role": "user", "content": q})
-            try:
-                mod = genai.GenerativeModel(MODEL_NAME)
-                # Pass shortened context to chat to avoid limits
-                context_str = json.dumps(st.session_state.ai_data)
-                res = mod.generate_content(f"Context: {context_str}. User: {q}. Lang: {lang}")
-                st.session_state.chat_history.append({"role": "assistant", "content": res.text})
-            except Exception as e:
-                st.session_state.chat_history.append({"role": "assistant", "content": f"Error: {e}"})
-        
-        for m in st.session_state.chat_history: st.chat_message(m['role']).write(m['content'])
+    
+    # --- UPDATED CHAT INTERFACE ---
+    # Moved to an expander for better stability than popover
+    with st.expander("💬 Chat about Structure", expanded=True):
+        # Only show chat if analysis exists
+        if st.session_state.ai_data:
+            # Display history
+            for m in st.session_state.chat_history:
+                st.chat_message(m['role']).write(m['content'])
+            
+            # Input
+            q = st.chat_input("Ask about the wave count...")
+            if q:
+                st.session_state.chat_history.append({"role": "user", "content": q})
+                st.chat_message("user").write(q)
+                
+                with st.spinner("AI thinking..."):
+                    try:
+                        # Use the requested model for chat as well
+                        mod = genai.GenerativeModel(MODEL_NAME)
+                        
+                        # Extract key parts of context to keep tokens low but relevant
+                        context_summary = {
+                            "macro": st.session_state.ai_data.get('macro_analysis'),
+                            "micro": st.session_state.ai_data.get('micro_analysis'),
+                            "scenarios": st.session_state.ai_data.get('trade_scenarios')
+                        }
+                        context_str = json.dumps(context_summary)
+                        
+                        # Generate response
+                        res = mod.generate_content(f"You are an Elliott Wave expert. Context: {context_str}. User Question: {q}. Language: {lang}")
+                        
+                        st.session_state.chat_history.append({"role": "assistant", "content": res.text})
+                        st.chat_message("assistant").write(res.text)
+                        
+                    except Exception as e:
+                        err_msg = f"Chat Error: {e}"
+                        st.session_state.chat_history.append({"role": "assistant", "content": err_msg})
+                        st.error(err_msg)
+        else:
+            st.info("⚠️ Please run an analysis first to enable chat.")
         
         if st.button("Clear Chat"): 
             st.session_state.chat_history = []
@@ -248,6 +275,7 @@ if run:
                     st.session_state.ai_data = ai
                     st.session_state.last_update = datetime.now().strftime("%H:%M:%S")
                     st.session_state.chat_history = []
+                    st.rerun() # Rerun to refresh the chat state with new data
                 else:
                     st.error("❌ AI Analysis Failed. Please try again.")
         else:
@@ -300,7 +328,7 @@ if st.session_state.ai_data:
     
     with tab1:
         if st.session_state.df_micro is not None:
-            # Display last 300 candles in chart as well for consistency
+            # Display last 300 candles in chart for consistency
             df = st.session_state.df_micro.tail(300)
             
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
