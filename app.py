@@ -19,7 +19,7 @@ except ImportError:
 # 1. CONFIGURATION
 # ==========================================
 
-st.set_page_config(page_title="Elliott Wave Pro (1m-1W)", layout="wide", page_icon="🌊")
+st.set_page_config(page_title="Elliott Wave Pro (Optimized)", layout="wide", page_icon="🌊")
 
 st.markdown("""
 <style>
@@ -51,7 +51,7 @@ if not API_KEY:
 
 try:
     genai.configure(api_key=API_KEY)
-    # CHANGED: Use a stable model for Cloud deployment
+    # Using a standard stable model
     MODEL_NAME = 'gemini-3-pro-preview' 
 except Exception as e:
     st.error(f"API Configuration Error: {e}")
@@ -66,12 +66,12 @@ if "df_micro" not in st.session_state: st.session_state.df_micro = None
 if "last_update" not in st.session_state: st.session_state.last_update = None
 if "chat_history" not in st.session_state: st.session_state.chat_history = []
 
-def get_crypto_data(symbol, timeframe, limit=200):
+def get_crypto_data(symbol, timeframe, limit=1000):
     """
-    Fetches crypto data. Tries Binance first.
+    Fetches crypto data. Increased default limit to 1000 to ensure sufficient history.
     """
     try:
-        # NOTE: If Binance blocks Streamlit Cloud IP, change this to ccxt.kraken() or ccxt.coinbase()
+        # Use Kraken or other exchanges if Binance is blocked
         exchange = ccxt.kraken({'enableRateLimit': True}) 
         bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
         df = pd.DataFrame(bars, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
@@ -87,38 +87,50 @@ def analyze_deep_wave(symbol, micro_tf, df_1w, df_1d, df_micro, language, previo
     if language == "Singlish":
         lang_inst = "Explain in 'Singlish' (Sinhala mixed with English). Use technical terms freely."
 
-    # Data to JSON (limit candles to reduce token count)
-    json_1w = df_1w.tail(50).to_json(orient="records", date_format='iso')
-    json_1d = df_1d.tail(100).to_json(orient="records", date_format='iso')
-    json_micro = df_micro.tail(100).to_json(orient="records", date_format='iso')
+    # --- DATA OPTIMIZATION FOR AI ---
+    # 1. 1W and 1D charts: Keep recent history for trend context
+    json_1w = df_1w.tail(30).to_json(orient="records", date_format='iso')
+    json_1d = df_1d.tail(60).to_json(orient="records", date_format='iso')
+
+    # 2. MICRO CHART (Optimized for Tokens)
+    # Select only essential columns: High, Low, Close, Volume, Open
+    cols = ['open', 'high', 'low', 'close', 'volume']
+    
+    # Take last 300 candles (Better for 1m timeframe)
+    micro_subset = df_micro.tail(300).copy()
+    
+    # Round to 4 decimal places to save tokens (e.g. 0.123456 -> 0.1235)
+    micro_subset[cols] = micro_subset[cols].round(4)
+    
+    # Convert to JSON without index to save space
+    json_micro = micro_subset.to_json(orient="records", date_format='iso')
 
     task = "### TASK: DETAILED ELLIOTT WAVE STRUCTURE ANALYSIS"
     if previous: task += f" (UPDATE PREVIOUS ANALYSIS)"
 
-    # Specific instruction for 1m/3m scalping
     scalp_instruction = ""
     if micro_tf in ['1m', '3m', '5m']:
         scalp_instruction = """
         **⚠️ SCALPING MODE ACTIVE (1m-5m):**
-        - The Micro chart is very volatile.
-        - Focus on immediate short-term structures.
+        - You are provided with 300 candles of micro data.
+        - Analyze the immediate wave structure carefully.
+        - Pay attention to Volume Divergence on the last wave.
         - Ensure the trade direction aligns with the 1D Trend.
-        - Tight invalidation levels are required.
         """
 
     prompt = f"""
     You are a Master Elliott Wave Analyst.
     {task}
     
-    ### DATA
-    * **1W (Trend):** {json_1w}
-    * **1D (Swing):** {json_1d}
-    * **MICRO ({micro_tf}):** {json_micro}
+    ### DATA INPUTS
+    * **1W (Trend Context):** {json_1w}
+    * **1D (Swing Context):** {json_1d}
+    * **MICRO ({micro_tf} - Last 300 Candles):** {json_micro}
     
     ### INSTRUCTIONS
-    1.  **Structure:** Explain the hierarchy (e.g., "Micro Wave 3 of Minor Wave 5").
-    2.  **Sub-Waves:** Identify internal sub-waves (i, ii, iii, iv, v).
-    3.  **Volume:** Confirm count with volume.
+    1.  **Structure:** Analyze the provided 300 candles to determine the exact wave count.
+    2.  **Validations:** Check High/Low relationships and Volume.
+    3.  **Consistency:** Ensure the Micro count fits into the 1D Swing structure.
     {scalp_instruction}
     
     ### LANGUAGE
@@ -182,7 +194,6 @@ with st.sidebar:
     lang = st.radio("Language", ["Singlish", "English"], index=0)
     sym = st.selectbox("Symbol", ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "DOGE/USDT", "ADA/USDT"], index=0)
     
-    # --- UPDATED TIMEFRAME LIST ---
     st.subheader("Timeframe")
     tf = st.selectbox(
         "Select Micro Chart", 
@@ -220,18 +231,18 @@ st.title(f"🌊 {sym} Deep Analysis ({tf})")
 
 if run:
     with st.spinner(f"📡 Fetching Data for {sym}..."):
-        # Fetching data
-        d1w = get_crypto_data(sym, "1w", 100)
-        d1d = get_crypto_data(sym, "1d", 150)
-        dm = get_crypto_data(sym, tf, 150)
+        # Fetching MORE data (limit=1000) to ensure we have enough for 300 candle analysis
+        d1w = get_crypto_data(sym, "1w", 200)
+        d1d = get_crypto_data(sym, "1d", 300)
+        dm = get_crypto_data(sym, tf, 1000)  # Fetches 1000 candles
         
-        # --- ERROR HANDLING: Check if data is empty ---
+        # --- ERROR HANDLING ---
         if not dm.empty and not d1w.empty:
             st.session_state.df_micro = dm
             st.session_state.df_1w = d1w
             st.session_state.df_1d = d1d
             
-            with st.spinner("🧠 AI Analyzing Elliott Waves..."):
+            with st.spinner("🧠 AI Analyzing Elliott Waves (Last 300 Candles)..."):
                 ai = analyze_deep_wave(sym, tf, d1w, d1d, dm, lang)
                 if ai:
                     st.session_state.ai_data = ai
@@ -241,8 +252,7 @@ if run:
                     st.error("❌ AI Analysis Failed. Please try again.")
         else:
             st.error(f"❌ Failed to fetch data for {sym}.")
-            st.warning("⚠️ Probable Cause: Binance API is blocking the Streamlit Cloud IP.")
-            st.info("💡 Tip: If you are the developer, try changing `ccxt.binance()` to `ccxt.kraken()` or `ccxt.coinbase()` in the code.")
+            st.warning("⚠️ Probable Cause: Exchange API issues.")
 
 # --- DISPLAY RESULTS ---
 if st.session_state.ai_data:
@@ -290,14 +300,15 @@ if st.session_state.ai_data:
     
     with tab1:
         if st.session_state.df_micro is not None:
-            df = st.session_state.df_micro
+            # Display last 300 candles in chart as well for consistency
+            df = st.session_state.df_micro.tail(300)
+            
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
             
             fig.add_trace(go.Candlestick(x=df['time'], open=df['open'], high=df['high'], low=df['low'], close=df['close'], name="Price"), row=1, col=1)
             colors = ['#00E676' if r['close'] >= r['open'] else '#FF5252' for i, r in df.iterrows()]
             fig.add_trace(go.Bar(x=df['time'], y=df['volume'], marker_color=colors, name="Volume"), row=2, col=1)
             
-            # Add Levels if available
             if 'trade_scenarios' in data and len(data['trade_scenarios']) > 0:
                 prim = data['trade_scenarios'][0]
                 try:
@@ -322,4 +333,3 @@ if st.session_state.ai_data:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-
