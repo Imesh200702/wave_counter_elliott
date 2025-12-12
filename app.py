@@ -72,7 +72,7 @@ def get_crypto_data(symbol, timeframe, limit=200):
     """
     try:
         # NOTE: If Binance blocks Streamlit Cloud IP, change this to ccxt.kraken() or ccxt.coinbase()
-        exchange = ccxt.binance({'enableRateLimit': True}) 
+        exchange = ccxt.kraken({'enableRateLimit': True}) 
         bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
         df = pd.DataFrame(bars, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
         df['time'] = pd.to_datetime(df['time'], unit='ms')
@@ -322,3 +322,4 @@ if st.session_state.ai_data:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+
