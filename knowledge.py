@@ -162,4 +162,26 @@ PART 6: SPECIAL CONSIDERATIONS
    - The market moves based on social psychology, not news.
    - News fits the wave count (e.g., bad news at the bottom of Wave 2, good news at the top of Wave B).
    - Wave 3 creates the fundamental news, it doesn't just react to it.
+================================================================================
+PART 7: FIBONACCI TIME ANALYSIS (WHEN TO EXPECT A TURN)
+================================================================================
+Just as Fibonacci ratios indicate PRICE targets, they also indicate TIME targets.
+
+A. FIBONACCI TIME SEQUENCES (Days/Bars)
+   - Pivot points often occur on Fibonacci counts from a major High or Low.
+   - Key Numbers: 5, 8, 13, 21, 34, 55, 89, 144 bars/days.
+   - Usage: Count forward from a significant Top or Bottom. Expect a reversal or acceleration on these specific days.
+
+B. TIME RATIOS (Wave Duration Analysis)
+   - Wave 1 vs Wave 2:
+     * Wave 2 often takes 61.8% or 100% of the time taken by Wave 1.
+   - Wave 1 vs Wave 3:
+     * Wave 3 usually consumes 1.618 times the duration of Wave 1.
+   - Wave 5 Time Target:
+     * Often takes 61.8% of the total time from start of W1 to end of W3.
+
+C. THE LAW OF ALTERNATION (TIME)
+   - If Wave 2 is short in time, Wave 4 is likely to be long in time (and vice versa).
+   - This helps in predicting when the correction will end.
+
 """
