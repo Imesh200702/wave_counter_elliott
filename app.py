@@ -136,6 +136,7 @@ def analyze_deep_wave(symbol, micro_tf, df_1w, df_1d, df_micro, language, previo
     1.  **Structure:** Analyze the provided 300 candles to determine the exact wave count.
     2.  **Validations:** Check High/Low relationships, Fibonacci Time cycles, and Volume.
     3.  **Consistency:** Ensure the Micro count fits into the 1D Swing structure.
+    4.  **rule** Only use elliott wave and support and resistance. also make sure give the datiled scenario in "trade_scenarios"
     {scalp_instruction}
     
     ### LANGUAGE
@@ -453,4 +454,5 @@ if st.session_state.ai_data:
 # --- DISCLAIMER ---
 st.markdown("---")
 st.caption("⚠️ **Disclaimer:** This application provides technical analysis based on Elliott Wave Theory using AI. Cryptocurrency trading involves high risk. This is not financial advice. Please do your own research before trading.")
+
 
